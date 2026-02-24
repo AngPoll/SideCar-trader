@@ -7,7 +7,7 @@ import {
   Cpu, Link as LinkIcon
 } from 'lucide-react';
 import { PriceData, Trigger, TickerInfo, ConnectionStatus, StockState, SignalType, PerformanceMetrics } from './types';
-import { fetchInitialData, getIndicators, fetchRealtimePrice, getUsageRPM, canRequest } from './services/finance';
+import { fetchInitialData, getIndicators, fetchRealtimePrice, getUsageRPM, canRequest } from './finance';
 import { realtimeManager, simplifySymbol, normalizeForTwelveData } from './services/realtime';
 import { getTradingAdvice } from './services/gemini';
 import StockChart from './components/StockChart';
