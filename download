@@ -1,0 +1,246 @@
+import { PriceData } from '../types';
+
+const API_KEY = '8f3800e868104130bbfc2012f417da88';
+const HEARTBEAT_INTERVAL_MS = 10000;
+const STALE_THRESHOLD_MS = 5000; // Trigger "STALE" faster for proactive REST fallback
+const WATCHDOG_CHECK_MS = 1000;
+const INITIAL_RECONNECT_DELAY = 2000;
+const MAX_RECONNECT_DELAY = 30000;
+
+export const simplifySymbol = (s: string) => {
+  if (!s) return '';
+  return s.split(':')[0].split('?')[0].toUpperCase().replace(/[^A-Z0-9]/g, '');
+};
+
+export const normalizeForTwelveData = (s: string) => {
+  const upper = s.toUpperCase().trim();
+  if (upper === 'BTC' || upper === 'BTCUSD' || upper === 'BTC/USD') return 'BTC/USD';
+  if (upper === 'ETH' || upper === 'ETHUSD' || upper === 'ETH/USD') return 'ETH/USD';
+  return upper;
+};
+
+export class MarketStream extends EventTarget {
+  private socket: WebSocket | null = null;
+  private activeSymbols: Set<string> = new Set();
+  private lastMessageTime: number = Date.now();
+  private reconnectTimeout: any = null;
+  private watchdogInterval: any = null;
+  private heartbeatInterval: any = null;
+  private reconnectAttempts: number = 0;
+  private lastKnownTimestamps: Record<string, number> = {};
+  
+  public readyState: number = 3;
+  private currentStatus: string = 'DISCONNECTED';
+
+  constructor() {
+    super();
+  }
+
+  private setStatus(status: string) {
+    if (this.currentStatus !== status) {
+      this.currentStatus = status;
+      this.dispatchEvent(new CustomEvent('status-change', { detail: status }));
+    }
+  }
+
+  private startMaintenance() {
+    this.stopMaintenance();
+    this.heartbeatInterval = setInterval(() => {
+      if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+        this.safeSend({ action: 'heartbeat' });
+      }
+    }, HEARTBEAT_INTERVAL_MS);
+
+    this.watchdogInterval = setInterval(() => {
+      const now = Date.now();
+      const timeSinceLastMessage = now - this.lastMessageTime;
+      
+      if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+        if (timeSinceLastMessage > STALE_THRESHOLD_MS) {
+          this.setStatus('STALE'); // This tells App.tsx to use REST fallback immediately
+        } else {
+          this.setStatus('CONNECTED');
+        }
+      } else {
+        this.setStatus('DISCONNECTED');
+      }
+    }, WATCHDOG_CHECK_MS);
+  }
+
+  private stopMaintenance() {
+    if (this.watchdogInterval) clearInterval(this.watchdogInterval);
+    if (this.heartbeatInterval) clearInterval(this.heartbeatInterval);
+  }
+
+  private safeSend(payload: object) {
+    if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+      try {
+        this.socket.send(JSON.stringify(payload));
+      } catch (e) {
+        // Silent fail for send errors during closing
+      }
+    }
+  }
+
+  public connect() {
+    this.cleanup(); 
+    this.startMaintenance();
+    
+    try {
+      this.setStatus('CONNECTING');
+      const socket = new WebSocket(`wss://ws.twelvedata.com/v1/quotes?apikey=${API_KEY}`);
+      this.socket = socket;
+
+      socket.onopen = () => {
+        if (this.socket !== socket) return;
+        this.readyState = 1;
+        this.reconnectAttempts = 0;
+        this.lastMessageTime = Date.now();
+        this.setStatus('CONNECTED');
+        
+        if (this.activeSymbols.size > 0) {
+          const symbols = Array.from(this.activeSymbols).map(normalizeForTwelveData).join(',');
+          this.safeSend({ action: 'subscribe', params: { symbols } });
+        }
+      };
+
+      socket.onmessage = (event) => {
+        if (this.socket !== socket) return;
+        this.lastMessageTime = Date.now();
+        
+        try {
+          const data = JSON.parse(event.data);
+          
+          // 1. SUPPRESS PROTOCOL NOISE
+          if (data.event === 'heartbeat' || data.status === 'ok') return;
+          
+          // 2. ERROR DIFFERENTIATION
+          if (data.status === 'error') {
+            const msg = data.message || '';
+            if (msg.includes("already subscribed")) return; // Silent skip
+            if (msg.includes("Invalid API key")) {
+              this.setStatus('ERROR');
+              console.error("[Hydra Engine] CRITICAL: Invalid TwelveData API Key.");
+              return;
+            }
+            // Log other protocol errors once
+            console.warn(`[Hydra Protocol] ${msg}`);
+            return;
+          }
+
+          const rawPrice = data.price || data.last || data.bid || data.ask;
+          if (rawPrice) {
+            const symbol = data.symbol || '';
+            const price = parseFloat(rawPrice);
+            const timestamp = data.timestamp ? data.timestamp * 1000 : Date.now();
+            
+            if (isNaN(price) || price <= 0) return;
+
+            // 3. SEQUENCE PROTECTION: Ignore out-of-order or stale WS packets
+            if (this.lastKnownTimestamps[symbol] && timestamp < this.lastKnownTimestamps[symbol]) {
+              return;
+            }
+            this.lastKnownTimestamps[symbol] = timestamp;
+
+            this.dispatchEvent(new MessageEvent('message', {
+              data: JSON.stringify({
+                type: 'ticker',
+                symbol: symbol,
+                data: {
+                  timestamp,
+                  open: price, high: price, low: price, close: price,
+                  volume: parseFloat(data.day_volume || data.volume) || 0
+                }
+              })
+            }));
+          }
+        } catch (e) {
+          // Parsing error - usually malformed JSON from network blip
+        }
+      };
+
+      socket.onclose = (e) => {
+        if (this.socket === socket) {
+          this.readyState = 3;
+          this.setStatus('DISCONNECTED');
+          if (e.code !== 1000) this.scheduleReconnect();
+        }
+      };
+
+      socket.onerror = () => {
+        if (this.socket === socket) {
+          this.setStatus('ERROR');
+        }
+      };
+    } catch (err) {
+      this.scheduleReconnect();
+    }
+  }
+
+  private scheduleReconnect() {
+    if (this.reconnectTimeout) clearTimeout(this.reconnectTimeout);
+    this.reconnectAttempts++;
+    const delay = Math.min(INITIAL_RECONNECT_DELAY * Math.pow(1.5, this.reconnectAttempts), MAX_RECONNECT_DELAY);
+    
+    this.reconnectTimeout = setTimeout(() => {
+      this.connect();
+    }, delay);
+  }
+
+  public cleanup() {
+    if (this.reconnectTimeout) clearTimeout(this.reconnectTimeout);
+    this.stopMaintenance();
+    if (this.socket) {
+      this.socket.onopen = null;
+      this.socket.onmessage = null;
+      this.socket.onclose = null;
+      this.socket.onerror = null;
+      try { 
+        if (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING) {
+          this.socket.close();
+        }
+      } catch (e) {}
+    }
+    this.socket = null;
+    this.readyState = 3;
+  }
+
+  public disconnect() {
+    this.cleanup();
+    this.reconnectAttempts = 0;
+    this.setStatus('DISCONNECTED');
+  }
+
+  public subscribe(symbol: string) {
+    const s = normalizeForTwelveData(symbol);
+    this.activeSymbols.add(s);
+    this.safeSend({ action: 'subscribe', params: { symbols: s } });
+  }
+
+  public unsubscribe(symbol: string) {
+    const s = normalizeForTwelveData(symbol);
+    this.activeSymbols.delete(s);
+    this.safeSend({ action: 'unsubscribe', params: { symbols: s } });
+  }
+}
+
+export const realtimeManager = {
+  privateStream: new MarketStream(),
+  connect(statusCb: (s: string) => void) {
+    this.privateStream.addEventListener('status-change', (e: any) => statusCb(e.detail));
+    this.privateStream.connect();
+  },
+  disconnect() { this.privateStream.disconnect(); },
+  subscribe(s: string) { this.privateStream.subscribe(s); },
+  unsubscribe(s: string) { this.privateStream.unsubscribe(s); },
+  onTick(cb: (d: PriceData, s: string) => void) {
+    const handler = (e: Event) => {
+      try {
+        const msg = JSON.parse((e as MessageEvent).data);
+        if (msg.type === 'ticker') cb(msg.data, msg.symbol);
+      } catch (err) {}
+    };
+    this.privateStream.addEventListener('message', handler);
+    return () => this.privateStream.removeEventListener('message', handler);
+  }
+};
