@@ -35,8 +35,11 @@ jobs:
           npm config delete @react:registry || true
           npm config get registry
 
-      - name: Install dependencies
-        run: npm install --registry=https://registry.npmjs.org/ --legacy-peer-deps --no-audit --no-fund
+      - name: Clean install dependencies
+  run: |
+    rm -rf node_modules package-lock.json
+    npm cache clean --force
+    npm install --registry=https://registry.npmjs.org --legacy-peer-deps
 
       - name: Build project
         run: npm run build
