@@ -142,18 +142,6 @@ export function getIndicators(priceSeries: Array<{ t?: number; timestamp?: numbe
     lastClose
   };
 }
-  return {
-    bollinger: {
-      upper: null,
-      middle: null,
-      lower: null
-    },
-    rsi: null,
-    macd: null,
-    sma: null,
-    ema: null,
-    lastClose
-  };
 // --- Added for App.tsx compatibility ---
 // Minimal implementations so the build succeeds.
 // Replace with your real logic later.
