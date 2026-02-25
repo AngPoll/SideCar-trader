@@ -133,14 +133,9 @@ export function getIndicators(priceSeries: Array<{ t?: number; timestamp?: numbe
 
   const lastClose = closes.length ? closes[closes.length - 1] : 0;
 
-  // SAFE DEFAULTS (prevents “cannot read bollinger” crashes)
   return {
-    bollinger: {
-      upper: lastClose,
-      middle: lastClose,
-      lower: lastClose
-    },
-    rsi: 50,          // neutral default so comparisons won't be weird
+    bollinger: { upper: lastClose, middle: lastClose, lower: lastClose },
+    rsi: 50,
     macd: 0,
     sma: lastClose,
     ema: lastClose,
