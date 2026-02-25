@@ -21,25 +21,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node (force npm registry)
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          registry-url: https://registry.npmjs.org/
-          cache: npm
-
-      - name: Force npm public registry (extra safety)
-        run: |
-          npm config set registry https://registry.npmjs.org/
-          npm config delete @types:registry || true
-          npm config delete @react:registry || true
-          npm config get registry
 
       - name: Clean install dependencies
-  run: |
-    rm -rf node_modules package-lock.json
-    npm cache clean --force
-    npm install --registry=https://registry.npmjs.org --legacy-peer-deps
+        run: |
+          rm -rf node_modules package-lock.json
+          npm cache clean --force
+          npm install --registry=https://registry.npmjs.org --legacy-peer-deps --no-audit --no-fund
 
       - name: Build project
         run: npm run build
