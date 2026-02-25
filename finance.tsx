@@ -127,16 +127,21 @@ const StrategyGuide: React.FC<StrategyGuideProps> = ({ isOpen, onClose }) => {
 export default StrategyGuide;
 // --- Added for App.tsx compatibility ---
 export function getIndicators(priceSeries: Array<{ t: number; close: number }>) {
-  // Minimal placeholder so build succeeds.
-  // Replace with real indicator calculations later.
-  const last = priceSeries?.[priceSeries.length - 1]?.close ?? 0;
+  const closes = (priceSeries ?? []).map(p => p.close).filter(n => typeof n === "number");
+  const lastClose = closes.length ? closes[closes.length - 1] : 0;
 
+  // Minimal safe defaults so UI won't crash
   return {
+    bollinger: {
+      upper: null,
+      middle: null,
+      lower: null
+    },
     rsi: null,
     macd: null,
     sma: null,
     ema: null,
-    lastClose: last
+    lastClose
   };
 }
 // --- Added for App.tsx compatibility ---
