@@ -139,3 +139,30 @@ export function getIndicators(priceSeries: Array<{ t: number; close: number }>) 
     lastClose: last
   };
 }
+// --- Added for App.tsx compatibility ---
+// Minimal implementations so the build succeeds.
+// Replace with your real logic later.
+
+export async function fetchInitialData(symbol: string) {
+  // Return an empty “safe” structure
+  return {
+    symbol,
+    prices: [] as Array<{ t: number; close: number }>,
+    info: null
+  };
+}
+
+export async function fetchRealtimePrice(symbol: string) {
+  // No realtime source yet; return null
+  return null as unknown as number | null;
+}
+
+export function getUsageRPM() {
+  // Requests per minute (placeholder)
+  return 0;
+}
+
+export function canRequest() {
+  // Always allow (placeholder)
+  return true;
+}
