@@ -159,7 +159,6 @@ export function getIndicators(priceSeries: Array<{ t?: number; timestamp?: numbe
     ema: null,
     lastClose
   };
-}
 // --- Added for App.tsx compatibility ---
 // Minimal implementations so the build succeeds.
 // Replace with your real logic later.
