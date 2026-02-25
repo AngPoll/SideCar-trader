@@ -176,3 +176,38 @@ export const getIndicators = (history: PriceData[]): Indicators => {
     stochRsi: { k: currentStochRsi, d: calculateSMA(rsiHistory.slice(-3), 3) } // Simplified smoothing
   };
 };
+// realtime.ts
+
+export function simplifySymbol(symbol: string): string {
+  return (symbol || "").trim().toUpperCase();
+}
+
+export function normalizeForTwelveData(symbol: string): string {
+  // Twelve Data typically expects uppercase tickers like AAPL
+  return simplifySymbol(symbol);
+}
+
+type Listener = (price: number) => void;
+
+class RealtimeManager {
+  private listeners = new Map<string, Set<Listener>>();
+
+  on(symbol: string, listener: Listener) {
+    const key = simplifySymbol(symbol);
+    if (!this.listeners.has(key)) this.listeners.set(key, new Set());
+    this.listeners.get(key)!.add(listener);
+    return () => this.off(key, listener);
+  }
+
+  off(symbol: string, listener: Listener) {
+    const key = simplifySymbol(symbol);
+    this.listeners.get(key)?.delete(listener);
+  }
+
+  emit(symbol: string, price: number) {
+    const key = simplifySymbol(symbol);
+    this.listeners.get(key)?.forEach((fn) => fn(price));
+  }
+}
+
+export const realtimeManager = new RealtimeManager();
