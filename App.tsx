@@ -446,7 +446,11 @@ const App: React.FC = () => {
     return () => { cleanup(); clearInterval(scanner); realtimeManager.disconnect(); };
   }, [processTick, connectionStatus]);
 
-  const indicators = useMemo(() => marketData.history.length > 0 ? marketData.history[marketData.history.length-1].indicators : null, [marketData.history]);
+const indicators = useMemo(() => {
+  if (marketData.history.length === 0) return null;
+  const last = marketData.history[marketData.history.length - 1];
+  return last.indicators ?? getIndicators(marketData.history);
+}, [marketData.history]);
   const mkt = getMarketStatus(selectedSymbol);
 
   const handleDeleteTicker = (symbol: string, e: React.MouseEvent) => {
