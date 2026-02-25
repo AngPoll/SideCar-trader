@@ -126,11 +126,27 @@ const StrategyGuide: React.FC<StrategyGuideProps> = ({ isOpen, onClose }) => {
 
 export default StrategyGuide;
 // --- Added for App.tsx compatibility ---
-export function getIndicators(priceSeries: Array<{ t: number; close: number }>) {
-  const closes = (priceSeries ?? []).map(p => p.close).filter(n => typeof n === "number");
+export function getIndicators(priceSeries: Array<{ t?: number; timestamp?: number; close: number }>) {
+  const closes = (priceSeries ?? [])
+    .map(p => p?.close)
+    .filter((n): n is number => typeof n === "number" && Number.isFinite(n));
+
   const lastClose = closes.length ? closes[closes.length - 1] : 0;
 
-  // Minimal safe defaults so UI won't crash
+  // SAFE DEFAULTS (prevents “cannot read bollinger” crashes)
+  return {
+    bollinger: {
+      upper: lastClose,
+      middle: lastClose,
+      lower: lastClose
+    },
+    rsi: 50,          // neutral default so comparisons won't be weird
+    macd: 0,
+    sma: lastClose,
+    ema: lastClose,
+    lastClose
+  };
+}
   return {
     bollinger: {
       upper: null,
