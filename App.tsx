@@ -449,7 +449,7 @@ const App: React.FC = () => {
 const indicators = useMemo(() => {
   if (marketData.history.length === 0) return null;
   const last = marketData.history[marketData.history.length - 1];
-  return last.indicators ?? getIndicators(marketData.history);
+  return last?.indicators ?? getIndicators(marketData.history);
 }, [marketData.history]);
   const mkt = getMarketStatus(selectedSymbol);
 
