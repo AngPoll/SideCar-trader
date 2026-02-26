@@ -1,3 +1,4 @@
+if (!indicators) return null;
 import React, { useMemo, useEffect, useState } from 'react';
 import { 
   ComposedChart, 
